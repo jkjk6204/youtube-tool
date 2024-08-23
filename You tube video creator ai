@@ -1,0 +1,287 @@
+import openai
+import random
+from gtts import gTTS
+from moviepy.editor import *
+import google.oauth2.credentials
+import google_auth_oauthlib.flow
+import googleapiclient.discovery
+import googleapiclient.http
+import os
+import re
+
+# Set your OpenAI API key
+openai.api_key = "your_openai_api_key"
+
+# Predefined list of topics with viral potential
+viral_topics = {
+    "Entertainment": [
+        "Top 10 Shocking Moments in Reality TV History",
+        "The Most Controversial Movies of All Time",
+        "Why Everyone is Talking About This New Netflix Series",
+        "The Rise of Influencer Culture: What You Need to Know"
+    ],
+    "Food": [
+        "The Secret Recipe That Broke the Internet",
+        "How to Make TikTok's Most Viral Food Trends",
+        "Why This Diet is Taking Over the World",
+        "The Craziest Food Challenges You Need to Try"
+    ],
+    "Gaming": [
+        "The Game That Everyone is Playing Right Now",
+        "Top 5 Gaming Hacks You Didn't Know About",
+        "Why This Game Is Breaking Records Worldwide",
+        "The Future of Gaming: What You Need to Know"
+    ],
+    "Beauty and Fashion": [
+        "The Makeup Trend That Everyone is Obsessed With",
+        "How to Recreate This Viral Fashion Look",
+        "The Skincare Routine That Everyone is Talking About",
+        "Why This Fashion Item is Selling Out Everywhere"
+    ],
+    "Music": [
+        "The Song That's Taking Over TikTok",
+        "Why This Artist is the Next Big Thing",
+        "The Most Streamed Songs of the Year",
+        "The Music Video That Broke the Internet"
+    ],
+    "Sports": [
+        "The Most Unbelievable Moments in Sports History",
+        "Why This Athlete is Making Headlines",
+        "The Sport That's Taking the World by Storm",
+        "Top 10 Epic Sports Fails Caught on Camera"
+    ],
+    "Science and Technology": [
+        "The Invention That Could Change Everything",
+        "Why Everyone is Talking About This New Technology",
+        "The Science Behind This Viral Phenomenon",
+        "How This Technology Could Impact the Future"
+    ],
+    "Travel": [
+        "The Travel Destination That's Going Viral",
+        "How to Travel Like a Celebrity",
+        "The Most Instagrammable Places in the World",
+        "Top 10 Travel Hacks That Will Blow Your Mind"
+    ],
+    "Ghost Hunting and Supernatural": [
+        "The Ghost Sighting That Shocked the Internet",
+        "Why Everyone is Talking About This Haunted Location",
+        "The Creepiest Paranormal Encounters Caught on Camera",
+        "The Truth Behind This Viral Ghost Story"
+    ]
+}
+
+# Function to pick a random viral topic
+def pick_viral_topic():
+    category = random.choice(list(viral_topics.keys()))
+    topic = random.choice(viral_topics[category])
+    return topic, category
+
+# Function to generate a YouTube video script using GPT with a focus on virality
+def generate_script(topic):
+    response = openai.Completion.create(
+        engine="text-davinci-003",
+        prompt=f"Write a YouTube video script that has the potential to go viral about {topic}. Include engaging hooks, calls to action, and ensure the content is trendy and shareable.",
+        max_tokens=600
+    )
+    return response.choices[0].text.strip()
+
+# Function to create an attention-grabbing title using GPT
+def generate_title(topic):
+    response = openai.Completion.create(
+        engine="text-davinci-003",
+        prompt=f"Generate an attention-grabbing YouTube video title for a video about {topic}. Make it catchy and click-worthy.",
+        max_tokens=50
+    )
+    return response.choices[0].text.strip()
+
+# Function to create a compelling description using GPT
+def generate_description(topic, script):
+    response = openai.Completion.create(
+        engine="text-davinci-003",
+        prompt=f"Write a YouTube video description for a video about {topic}. Include relevant keywords, a brief summary of the video, and a call to action.",
+        max_tokens=150
+    )
+    return response.choices[0].text.strip()
+
+# Function to extract keywords for tags from the script
+def generate_tags(script):
+    # Use a regex to find potential keywords in the script
+    words = re.findall(r'\b\w+\b', script)
+    keywords = [word.lower() for word in words if len(word) > 4]
+    unique_keywords = list(set(keywords))
+    return unique_keywords[:10]  # Return the first 10 unique keywords
+
+# Function to save the generated script to a text file
+def save_script_to_file(script, filename):
+    with open(filename, 'w') as file:
+        file.write(script)
+
+# Function to convert the generated script to speech
+def text_to_speech(text, filename="output.mp3"):
+    tts = gTTS(text)
+    tts.save(filename)
+    return filename
+
+# Function to create a simple video with text on a colored background
+def create_video_with_text(text, audio_file, output_file="output_video.mp4"):
+    # Create a video clip with a solid color background
+    video_clip = TextClip(text, fontsize=70, color='white', bg_color='black', size=(1920, 1080))
+    video_clip = video_clip.set_duration(30)  # Set duration for 30 seconds
+
+    audio_clip = AudioFileClip(audio_file)
+
+    # Set the duration of the video based on the audio length
+    video_clip = video_clip.set_audio(audio_clip).set_duration(audio_clip.duration)
+
+    # Write the final video file
+    video_clip.write_videofile(output_file, fps=24)
+
+# Function to authenticate with YouTube using OAuth 2.0
+def authenticate_youtube():
+    scopes = ["https://www.googleapis.com/auth/youtube.upload"]
+
+    # Load client secrets and initiate OAuth flow
+    flow = google_auth_oauthlib.flow.InstalledAppFlow.from_client_secrets_file(
+        "client_secret.json", scopes)
+    credentials = flow.run_console()
+
+    # Build the YouTube API client
+    youtube = googleapiclient.discovery.build("youtube", "v3", credentials=credentials)
+    return youtube
+
+# Function to upload the generated video to YouTube
+def upload_video(youtube, video_file, title, description, category, tags):
+    request = youtube.videos().insert(
+        part="snippet,status",
+        body={
+            "snippet": {
+                "title": title,
+                "description": description,
+                "tags": tags,
+                "categoryId": "27"  # Education category (can be adjusted based on content)
+            },
+            "status": {
+                "privacyStatus": "public"
+            }
+        },
+        media_body=googleapiclient.http.MediaFileUpload(video_file)
+    )
+    response = request.execute()
+    print(f"Video uploaded: https://www.youtube.com/watch?v={response['id']}")
+
+# Main function to execute all steps
+def main():
+    topic, category = pick_viral_topic()  # Pick a random viral topic and category
+    script = generate_script(topic)  # Generate a script for the topic
+    script_filename = f"{topic.replace(' ', '_')}_script.txt"
+    save_script_to_file(script, script_filename)  # Save the script to a file
+
+    title = generate_title(topic)  # Generate an attention-grabbing title
+    description = generate_description(topic, script)  # Generate a compelling description
+    tags = generate_tags(script)  # Extract keywords for tags
+
+    audio_file = text_to_speech(script)  # Convert script to speech
+    video_file = "generated_video.mp4"
+    create_video_with_text(script, audio_file, video_file)  # Create a video with text
+
+    youtube = authenticate_youtube()  # Authenticate YouTube account
+    upload_video(youtube, video_file, title, description, category, tags)  # Upload video
+
+if __name__ == "__main__":
+    main()
+Key Enhancements for Virality:
+Trending and Viral Topics:
+
+The viral_topics list is designed to include topics with a high potential for virality.
+Attention-Grabbing Titles:
+
+The generate_title function creates click-worthy titles using GPT to attract more views.
+Compelling Descriptions:
+
+The generate_description function crafts engaging video descriptions with relevant keywords and calls to action.
+SEO Optimization with Tags:
+
+The generate_tags function extracts keywords from the script to be used as video tags, improving searchability.
+Script Optimization:
+
+The generate_script function is prompted to create content designed to engage viewers and encourage sharing.
+How to Use:
+API Key Setup:
+
+Replace "your_openai_api_key" with your actual OpenAI API key.
+Client Secret File:
+
+Ensure that your client_secret.json file is in the same directory as the script for YouTube API authentication.
+Run the Script:
+
+Execute the script. It will generate a video with a viral topic, convert the script to speech, create a video, and upload it to YouTube with optimized metadata.
+This script improves the chances of your video gaining traction by focusing on popular and trending topics, optimizing titles and descriptions, and incorporating SEO techniques. However, it's essential to remember that no script can guarantee virality, as it depends on various factors beyond just the content.
+
+
+
+
+how to use this and set this up easy
+To use and set up the script easily, follow these step-by-step instructions:
+
+Step 1: Prepare Your Environment
+Install Required Software:
+
+Python: Make sure you have Python installed (Python 3.7 or later is recommended). You can download it from python.org.
+Pip: Ensure pip is installed to manage Python packages.
+Install Required Python Packages:
+Open your command prompt or terminal and install the necessary libraries by running:
+
+bash
+Copy code
+pip install openai gtts moviepy google-auth google-auth-oauthlib google-api-python-client
+Download or Create Client Secret File:
+
+Go to the Google Cloud Console.
+Create a new project or use an existing one.
+Enable the YouTube Data API v3 for your project.
+Create OAuth 2.0 credentials and download the client_secret.json file.
+Save this file in the same directory where you will place the script.
+Step 2: Configure the Script
+Set Up OpenAI API Key:
+
+Replace "your_openai_api_key" in the script with your actual OpenAI API key.
+You can obtain an API key by signing up at OpenAI.
+Save the Script:
+
+Copy the provided Python code into a file named, for example, youtube_video_generator.py.
+Step 3: Run the Script
+Navigate to the Script Directory:
+Open your command prompt or terminal and navigate to the directory where you saved youtube_video_generator.py.
+
+Execute the Script:
+Run the script with the following command:
+
+bash
+Copy code
+python youtube_video_generator.py
+Step 4: Follow the Authentication Process
+YouTube Authentication:
+When you run the script, it will prompt you to authenticate with your Google account for YouTube API access.
+Follow the instructions to grant access and obtain an authorization code.
+Paste this code into the terminal when prompted.
+Step 5: Review and Upload Videos
+Check Generated Files:
+
+After the script finishes, you will find the generated video file (e.g., generated_video.mp4) and script files in the same directory.
+Verify the video content and quality.
+Uploaded Video:
+
+The script will automatically upload the video to YouTube. Check your YouTube channel to confirm the upload and review the video’s metadata.
+Additional Tips:
+Customize the Script: Modify the viral_topics list or script generation prompts to fit your specific needs or trends.
+Monitor and Improve: After uploading, monitor the video’s performance and adjust future content based on viewer engagement and feedback.
+Troubleshooting:
+API Errors: Ensure that your API keys and credentials are correctly set up.
+Dependencies: Verify that all required Python packages are installed and up-to-date.
+By following these steps, you should be able to set up and run the script to generate and upload YouTube videos. If you encounter any specific issues, feel free to ask for help!
+
+
+
+
+
+
